@@ -261,8 +261,8 @@ export default function ShareDialog({ open, onClose }: { open: boolean; onClose:
       <div className="mt-4 flex items-start gap-2.5 text-[10px] leading-relaxed text-[var(--muted-2)]">
         <Share2 size={13} className="mt-0.5 shrink-0" />
         <p className="m-0">
-          Live edits travel through a public MQTT relay as Yjs updates; no central document server
-          stores your design. Anyone with the room link can join, so treat the link as the password.
+          Live edits travel through a public MQTT relay as Yjs updates, and the broker may retain the
+          latest full state. Anyone with the room link can join, so treat the link as the password.
           Point <code>NEXT_PUBLIC_MQTT_URL</code> at your own broker for private deployments.
         </p>
       </div>
