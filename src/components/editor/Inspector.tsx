@@ -21,6 +21,7 @@ import {
   Group,
   Italic,
   LockKeyhole,
+  Pencil,
   Play,
   Square,
   Trash2,
@@ -275,6 +276,31 @@ function TextInspector({ text, multi }: { text: Extract<DesignElement, { type: "
   const bg = text.backgroundColor;
   return (
     <>
+      <Section title="Content">
+        <div className="field">
+          <label className="label" htmlFor={`text-content-${text.id}`}>Text</label>
+          <textarea
+            id={`text-content-${text.id}`}
+            className="textarea"
+            style={{ minHeight: 76, fontSize: 12.5 }}
+            value={text.text}
+            onChange={(e) => {
+              const value = e.target.value;
+              const explicitLines = value.split("\n").length;
+              const minHeight = Math.ceil(explicitLines * text.fontSize * text.lineHeight);
+              patch({
+                text: value,
+                ...(text.height < minHeight ? { height: minHeight } : {}),
+              } as Partial<DesignElement>);
+            }}
+            onKeyDown={(e) => e.stopPropagation()}
+            placeholder="Type your text…"
+          />
+          <p className="text-[10px] leading-relaxed text-[var(--muted-2)] mt-1.5">
+            Use the canvas or this field to edit the actual copy. Double-click on the canvas also works.
+          </p>
+        </div>
+      </Section>
       <Section title="Typography">
         <SelectField
           label="Typeface"
@@ -651,6 +677,7 @@ function ElementInspector() {
   const renameElement = useEditor((s) => s.renameElement);
   const toggleLock = useEditor((s) => s.toggleLock);
   const toggleHidden = useEditor((s) => s.toggleHidden);
+  const setEditingText = useEditor((s) => s.setEditingText);
 
   if (!selected.length) return null;
   const el = selected[0];
@@ -673,13 +700,35 @@ function ElementInspector() {
           {image ? <Square size={14} /> : null}
           {sticker ? <Square size={14} /> : null}
         </span>
-        <input
-          className="min-w-0 flex-1 bg-transparent text-[12px] font-semibold outline-none border border-transparent focus:border-[var(--line-strong)] focus:bg-white rounded px-1.5 py-1"
-          value={multi ? `${selected.length} layers selected` : el.name}
-          disabled={multi}
-          onChange={(e) => renameElement(el.id, e.target.value)}
-          aria-label="Layer name"
-        />
+        <div className="min-w-0 flex-1">
+          <div className="text-[8px] font-bold uppercase tracking-[0.1em] text-[var(--muted-2)] pl-1.5 mb-0.5">
+            {multi ? "Selection" : "Layer name"}
+          </div>
+          <input
+            className="w-full bg-transparent text-[12px] font-semibold outline-none border border-transparent focus:border-[var(--line-strong)] focus:bg-white rounded px-1.5 py-1"
+            value={multi ? `${selected.length} layers selected` : el.name}
+            disabled={multi}
+            onChange={(e) => renameElement(el.id, e.target.value)}
+            onBlur={(e) => {
+              if (!multi && !e.target.value.trim()) {
+                renameElement(el.id, el.type === "text" ? "Text" : el.type);
+              }
+            }}
+            placeholder="Layer name"
+            aria-label="Layer name"
+          />
+        </div>
+        {el.type === "text" && !multi ? (
+          <button
+            type="button"
+            className="layer-action"
+            onClick={() => setEditingText(el.id)}
+            title="Edit text on canvas"
+            aria-label="Edit text on canvas"
+          >
+            <Pencil size={12} />
+          </button>
+        ) : null}
         <button type="button" className="layer-action" onClick={() => (multi ? selected.forEach((s) => toggleLock(s.id)) : toggleLock(el.id))} title="Lock">
           {el.locked ? <LockKeyhole size={13} /> : <Unlock size={13} />}
         </button>
