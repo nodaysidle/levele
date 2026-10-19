@@ -1,0 +1,44 @@
+{
+  "name": "levele",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Levele — an open-source, Canva-style design editor for the browser.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test:smoke": "node tests/smoke.mjs",
+    "icons": "node scripts/generate-icons.mjs"
+  },
+  "dependencies": {
+    "gifenc": "^1.0.3",
+    "idb": "^8.0.4",
+    "jspdf": "^4.2.1",
+    "konva": "^10.9.0",
+    "lucide-react": "^1.59.0",
+    "lz-string": "^1.5.0",
+    "mqtt": "^5.16.1",
+    "nanoid": "^5.1.7",
+    "next": "16.4.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-konva": "^19.3.2",
+    "yjs": "^13.6.33",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "lucide-static": "^0.575.0",
+    "playwright": "^1.64.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20.9"
+  }
+}

@@ -45,6 +45,7 @@ build/
 # Web & Node
 node_modules/
 .next/
+tsconfig.tsbuildinfo
 .nuxt/
 .output/
 .vercel/
@@ -65,3 +66,4 @@ pnpm-debug.log*
 *.tgz
 *.zip
 *.iso
+.vercel
