@@ -2,7 +2,7 @@
   "name": "levele",
   "version": "0.1.0",
   "private": true,
-  "description": "Levele — an open-source, Canva-style design editor for the browser.",
+  "description": "Open-source, Canva-style design studio for the browser: templates, layers, animation, comments, live collaboration, and PNG/PDF/GIF/video export.",
   "license": "MIT",
   "scripts": {
     "dev": "next dev",
@@ -40,5 +40,25 @@
   },
   "engines": {
     "node": ">=20.9"
-  }
+  },
+  "author": "NODAYSIDLE",
+  "homepage": "https://levele-eight.vercel.app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nodaysidle/levele.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nodaysidle/levele/issues"
+  },
+  "keywords": [
+    "design-editor",
+    "canva-alternative",
+    "nextjs",
+    "konva",
+    "yjs",
+    "collaboration",
+    "graphic-design",
+    "vercel",
+    "open-source"
+  ]
 }
