@@ -44,6 +44,7 @@ export async function saveDocRecord(
   doc: DesignDoc,
   ownerId: string,
   thumbnail?: string,
+  sync?: Pick<StoredDoc, "yState" | "roomKey">,
 ): Promise<StoredDoc> {
   const database = await db();
   const existing = await database.get("docs", doc.id);
@@ -59,6 +60,8 @@ export async function saveDocRecord(
     updatedAt: Date.now(),
     thumbnail: thumbnail ?? existing?.thumbnail,
     doc,
+    // The editor session owns sync fields (an absent roomKey means the live session ended).
+    ...(sync ?? { yState: existing?.yState, roomKey: existing?.roomKey }),
   };
   await database.put("docs", record);
   return record;
@@ -71,12 +74,6 @@ export async function getDocRecord(id: string): Promise<StoredDoc | undefined> {
 export async function listDocRecords(ownerId: string): Promise<StoredDoc[]> {
   const database = await db();
   const all = await database.getAllFromIndex("docs", "by-owner", ownerId);
-  return all.sort((a, b) => b.updatedAt - a.updatedAt);
-}
-
-export async function listAllDocRecords(): Promise<StoredDoc[]> {
-  const database = await db();
-  const all = await database.getAll("docs");
   return all.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 

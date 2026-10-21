@@ -67,7 +67,7 @@ export function applyDocument(ydoc: Y.Doc, doc: DesignDoc) {
     comments.clear();
     doc.pages.forEach((p, i) => pages.set(p.id, { ...p, order: i }));
     doc.elements.forEach((el) => elements.set(el.id, el));
-    doc.comments.forEach((c) => comments.set(c.id, c));
+    (doc.comments ?? []).forEach((c) => comments.set(c.id, c));
   });
 }
 
@@ -110,32 +110,11 @@ export function deleteElements(ydoc: Y.Doc, ids: string[]) {
   transactLocal(ydoc, () => ids.forEach((id) => elements.delete(id)));
 }
 
-export function normalizeElementOrder(ydoc: Y.Doc, pageId: string) {
-  const { elements } = collections(ydoc);
-  const list = Array.from(elements.values())
-    .filter((el) => el.pageId === pageId)
-    .sort((a, b) => a.order - b.order);
-  transactLocal(ydoc, () => {
-    list.forEach((el, i) => {
-      if (el.order !== i) elements.set(el.id, { ...el, order: i });
-    });
-  });
-}
-
 export function addPage(ydoc: Y.Doc, page: DesignPage) {
   const { pages } = collections(ydoc);
   transactLocal(ydoc, () => {
     const existing = Array.from(pages.values());
     pages.set(page.id, { ...page, order: existing.length });
-  });
-}
-
-export function insertPage(ydoc: Y.Doc, page: DesignPage, at: number) {
-  const { pages } = collections(ydoc);
-  transactLocal(ydoc, () => {
-    pages.set(page.id, page);
-    normalizePageOrder(ydoc);
-    void at;
   });
 }
 

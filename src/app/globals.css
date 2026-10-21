@@ -1857,12 +1857,15 @@ input[type="range"]::-webkit-slider-thumb {
   box-shadow: var(--shadow-lg);
   width: 100%;
   max-height: calc(100dvh - 48px);
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.4);
   animation: modal-in 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .modal-head {
+  flex-shrink: 0;
   padding: 20px 22px 0;
   display: flex;
   align-items: start;
@@ -1886,9 +1889,13 @@ input[type="range"]::-webkit-slider-thumb {
 
 .modal-body {
   padding: 20px 22px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 
 .modal-foot {
+  flex-shrink: 0;
   padding: 0 22px 20px;
   display: flex;
   align-items: center;
@@ -2314,5 +2321,101 @@ input[type="range"]::-webkit-slider-thumb {
   }
   .modal-body {
     padding: 16px;
+  }
+}
+
+/* Touch / phone: invisible 44px hit areas so the look does not bloat. */
+.show-mobile {
+  display: none !important;
+}
+
+@media (max-width: 860px) {
+  .editor-topbar .show-mobile {
+    display: flex !important;
+  }
+  .editor-topbar .doc-title-input {
+    width: 96px;
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+  .editor-topbar .save-pill {
+    flex: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .editor-topbar .btn,
+  .editor-topbar button,
+  .zoom-controls button,
+  .panel-head .modal-close,
+  .swatch {
+    position: relative;
+  }
+  .editor-topbar .btn::after,
+  .editor-topbar > div > button::after,
+  .zoom-controls button::after,
+  .panel-head .modal-close::after,
+  .swatch::after {
+    content: "";
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+  .swatch {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* Page thumbnail actions: hover/focus on desktop, always visible on touch. */
+.page-item {
+  position: relative;
+  flex: none;
+}
+
+.page-acts {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.page-item:hover .page-acts,
+.page-item:focus-within .page-acts {
+  opacity: 1;
+}
+
+.page-act {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--ink-soft);
+}
+
+.page-act:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.page-act:disabled {
+  opacity: 0.4;
+}
+
+@media (pointer: coarse) {
+  .page-acts {
+    opacity: 1;
+  }
+  .page-act {
+    width: 28px;
+    height: 28px;
   }
 }

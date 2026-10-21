@@ -92,6 +92,7 @@ export default function CanvasStage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const trRef = useRef<Konva.Transformer>(null);
+  const coarse = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
   const thumbRef = useRef<Konva.Stage>(null);
   const interaction = useRef<Interaction | null>(null);
   const dragOffsetRef = useRef<{ dx: number; dy: number } | null>(null);
@@ -858,7 +859,7 @@ export default function CanvasStage() {
             borderStrokeWidth={1.5}
             anchorStroke="#FF5A36"
             anchorFill="#FFFFFF"
-            anchorSize={9}
+            anchorSize={coarse ? 20 : 9}
             anchorCornerRadius={2}
             padding={2}
             ignoreStroke

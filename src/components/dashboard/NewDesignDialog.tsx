@@ -54,7 +54,7 @@ export default function NewDesignDialog({
       subtitle="Pick a format. Every canvas is fully editable and exportable."
       width={760}
       footer={
-        <div className="flex w-full items-center justify-between gap-3">
+        <div className="flex w-full flex-wrap items-center justify-between gap-3">
           <span className="text-[10px] text-[var(--muted-2)]">
             No account required · autosaves in this browser
           </span>

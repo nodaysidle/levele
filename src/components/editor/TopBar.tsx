@@ -53,6 +53,7 @@ export default function TopBar({
   const [menuOpen, setMenuOpen] = useState(false);
   const [titleDraft, setTitleDraft] = useState(doc?.title ?? "");
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuBtnRef = useRef<HTMLButtonElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -70,8 +71,17 @@ export default function TopBar({
     const onClick = (e: MouseEvent) => {
       if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
     };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setMenuOpen(false);
+      menuBtnRef.current?.focus();
+    };
     window.addEventListener("pointerdown", onClick);
-    return () => window.removeEventListener("pointerdown", onClick);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", onClick);
+      window.removeEventListener("keydown", onKey);
+    };
   }, [menuOpen]);
 
   const commitTitle = () => {
@@ -156,7 +166,7 @@ export default function TopBar({
 
       <div className="flex-1" />
 
-      <div className="hide-mobile flex items-center gap-0.5">
+      <div className="flex items-center gap-0.5">
         <button type="button" className="btn btn-ghost btn-icon" disabled={!canUndo} onClick={undo} title="Undo (⌘Z)" aria-label="Undo">
           <Undo2 size={16} />
         </button>
@@ -197,24 +207,27 @@ export default function TopBar({
         <SlidersHorizontal size={16} />
       </button>
 
-      <button type="button" className="btn btn-outline btn-sm" onClick={() => openPresentation()} title="Present (play animations)">
+      <button type="button" className="btn btn-outline btn-sm hide-mobile" onClick={() => openPresentation()} title="Present (play animations)">
         <Play size={14} />
         <span className="hide-mobile">Present</span>
       </button>
 
-      <button type="button" className="btn btn-outline btn-sm" onClick={onOpenShare}>
+      <button type="button" className="btn btn-outline btn-sm" onClick={onOpenShare} aria-label="Share" title="Share">
         {peers.length ? <Users size={14} /> : <Share2 size={14} />}
         <span className="hide-mobile">Share</span>
       </button>
 
-      <button type="button" className="btn btn-accent btn-sm" onClick={onOpenExport}>
+      <button type="button" className="btn btn-accent btn-sm" onClick={onOpenExport} aria-label="Export" title="Export">
         <Download size={14} />
         <span className="hide-mobile">Export</span>
       </button>
 
       <div className="relative" ref={menuRef}>
         <button
+          ref={menuBtnRef}
           type="button"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
           className="w-8 h-8 rounded-full border border-[var(--line-strong)] bg-white grid place-items-center ml-1 hover:border-[var(--ink)] transition-colors overflow-hidden"
           onClick={() => setMenuOpen((v) => !v)}
           aria-label="Account menu"
@@ -232,7 +245,7 @@ export default function TopBar({
           )}
         </button>
         {menuOpen ? (
-          <div className="dropdown right-0 top-10 w-[210px]">
+          <div className="dropdown right-0 top-10 w-[210px]" role="menu">
             <div className="px-2.5 py-2 border-b border-[var(--line)] mb-1">
               <div className="text-[11.5px] font-semibold truncate">{profile?.name}</div>
               <div className="text-[10px] text-[var(--muted)] truncate">
@@ -241,6 +254,29 @@ export default function TopBar({
             </div>
             <button
               type="button"
+              className="show-mobile"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                openPresentation();
+              }}
+            >
+              <Play size={13} /> Present
+            </button>
+            <button
+              type="button"
+              className="show-mobile"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                toggleComments();
+              }}
+            >
+              <MessageCircle size={13} /> Comments{openComments ? ` (${openComments})` : ""}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
               onClick={() => {
                 setMenuOpen(false);
                 onOpenAccount();
@@ -251,6 +287,7 @@ export default function TopBar({
             {session ? (
               <button
                 type="button"
+                role="menuitem"
                 onClick={() => {
                   setMenuOpen(false);
                   onOpenShare();
@@ -260,7 +297,7 @@ export default function TopBar({
               </button>
             ) : null}
             <hr />
-            <Link href="/"><ChevronLeft size={13} /> All designs</Link>
+            <Link href="/" role="menuitem"><ChevronLeft size={13} /> All designs</Link>
           </div>
         ) : null}
       </div>

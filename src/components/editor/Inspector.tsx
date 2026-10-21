@@ -16,6 +16,8 @@ import {
   ArrowUpToLine,
   Bold,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   Copy,
   Group,
@@ -522,6 +524,7 @@ function ShapeInspector({ shape }: { shape: Extract<DesignElement, { type: "shap
             style={{ background: c }}
             onClick={() => patch({ fill: c } as Partial<DesignElement>)}
             title={c}
+            aria-label={c}
           />
         ))}
       </div>
@@ -799,7 +802,7 @@ function ElementInspector() {
         </div>
         <div className="grid-2">
           <button type="button" className="tool-btn" disabled={selected.length < 2} onClick={groupSelected}><Group size={14} /> <span className="ml-1.5 text-[10.5px]">Group</span></button>
-          <button type="button" className="tool-btn" onClick={ungroupSelected}><Ungroup size={14} /> <span className="ml-1.5 text-[10.5px]">Ungroup</span></button>
+          <button type="button" className="tool-btn" disabled={!selected.some((e) => e.groupId)} onClick={ungroupSelected}><Ungroup size={14} /> <span className="ml-1.5 text-[10.5px]">Ungroup</span></button>
         </div>
         <div className="grid-3 mt-1.5">
           <button type="button" className="tool-btn" title="Duplicate" onClick={duplicateSelected}><Copy size={14} /></button>
@@ -850,6 +853,7 @@ function PageInspector() {
 
   if (!doc || !page) return null;
   const bg = page.background;
+  const pageIndex = doc.pages.findIndex((p) => p.id === page.id);
 
   const setType = (type: Background["type"]) => {
     if (type === bg.type) return;
@@ -909,7 +913,7 @@ function PageInspector() {
             <ColorField label="Color" value={bg.color} onChange={(color) => setPageBackground({ type: "solid", color })} />
             <div className="flex flex-wrap gap-1.5">
               {PALETTE.slice(0, 18).map((color) => (
-                <button key={color} type="button" className={`swatch ${bg.color.toUpperCase() === color ? "is-active" : ""}`} style={{ background: color }} onClick={() => setPageBackground({ type: "solid", color })} />
+                <button key={color} type="button" className={`swatch ${bg.color.toUpperCase() === color ? "is-active" : ""}`} style={{ background: color }} onClick={() => setPageBackground({ type: "solid", color })} title={color} aria-label={color} />
               ))}
             </div>
           </div>
@@ -1017,13 +1021,13 @@ function PageInspector() {
 
       <Section title="Pages">
         <div className="grid grid-cols-2 gap-1.5">
-          <button type="button" className="tool-btn" onClick={() => movePage(page.id, -1)}><ChevronUp size={13} className="rotate-180" /> <span className="ml-1 text-[10.5px]">Move left</span></button>
-          <button type="button" className="tool-btn" onClick={() => movePage(page.id, 1)}><ChevronDown size={13} className="rotate-180" /> <span className="ml-1 text-[10.5px]">Move right</span></button>
+          <button type="button" className="tool-btn" disabled={pageIndex <= 0} onClick={() => movePage(page.id, -1)}><ChevronLeft size={13} /> <span className="ml-1 text-[10.5px]">Move left</span></button>
+          <button type="button" className="tool-btn" disabled={pageIndex >= doc.pages.length - 1} onClick={() => movePage(page.id, 1)}><ChevronRight size={13} /> <span className="ml-1 text-[10.5px]">Move right</span></button>
           <button type="button" className="tool-btn" onClick={() => duplicatePage(page.id)}><Copy size={13} /> <span className="ml-1 text-[10.5px]">Duplicate</span></button>
           <button type="button" className="tool-btn danger" disabled={doc.pages.length <= 1} onClick={() => deletePage(page.id)}><Trash2 size={13} /> <span className="ml-1 text-[10.5px]">Delete</span></button>
         </div>
         <p className="text-[10px] text-[var(--muted-2)] mt-2">
-          Page {doc.pages.findIndex((p) => p.id === page.id) + 1} of {doc.pages.length}
+          Page {pageIndex + 1} of {doc.pages.length}
         </p>
       </Section>
     </>

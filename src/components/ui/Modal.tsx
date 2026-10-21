@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
@@ -25,6 +25,7 @@ export function Modal({
 }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -40,6 +41,42 @@ export function Modal({
     };
   }, [open, onClose]);
 
+  useEffect(() => {
+    if (!open || !mounted) return;
+    const opener = document.activeElement as HTMLElement | null;
+    const dialog = dialogRef.current;
+    const focusables = () =>
+      Array.from(
+        dialog?.querySelectorAll<HTMLElement>(
+          'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      );
+    // Skip the header close button so typing starts in the content.
+    (focusables().find((el) => !el.classList.contains("modal-close")) ?? focusables()[0] ?? dialog)?.focus();
+    const trap = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const items = focusables();
+      if (!items.length) return e.preventDefault();
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!dialog?.contains(document.activeElement)) {
+        e.preventDefault();
+        first.focus();
+      } else if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", trap);
+    return () => {
+      document.removeEventListener("keydown", trap);
+      opener?.focus?.();
+    };
+  }, [open, mounted]);
+
   if (!mounted || !open) return null;
 
   return createPortal(
@@ -49,7 +86,7 @@ export function Modal({
         if (closeOnBackdrop && e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="modal" style={{ maxWidth: width }} role="dialog" aria-modal="true" aria-label={title}>
+      <div ref={dialogRef} tabIndex={-1} className="modal" style={{ maxWidth: width }} role="dialog" aria-modal="true" aria-label={title}>
         {title ? (
           <div className="modal-head">
             <div>

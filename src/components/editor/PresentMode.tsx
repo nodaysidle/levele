@@ -29,7 +29,9 @@ export default function PresentMode() {
   const [time, setTime] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const userExitedFullscreen = useRef(false);
 
   const page = doc?.pages[index] ?? doc?.pages[0];
   const elements = useMemo(
@@ -84,18 +86,40 @@ export default function PresentMode() {
       () => setFullscreen(true),
       () => setFullscreen(false),
     );
-    const onFullscreen = () => setFullscreen(!!document.fullscreenElement);
+    // Browsers swallow Escape while fullscreen, so leaving fullscreen also ends the show.
+    let entered = false;
+    const onFullscreen = () => {
+      setFullscreen(!!document.fullscreenElement);
+      if (document.fullscreenElement) entered = true;
+      else if (entered && !userExitedFullscreen.current) close();
+      userExitedFullscreen.current = false;
+    };
     document.addEventListener("fullscreenchange", onFullscreen);
     return () => {
       document.removeEventListener("fullscreenchange", onFullscreen);
       if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
     };
+  }, [open, close]);
+
+  useEffect(() => {
+    if (!open) return;
+    const opener = document.activeElement as HTMLElement | null;
+    overlayRef.current?.focus();
+    return () => opener?.focus?.();
   }, [open]);
 
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (["ArrowRight", "ArrowDown", "PageDown", " ", "Enter"].includes(e.key)) {
+      if (e.key === "Tab") {
+        // Keep focus on the overlay so Tab never reaches the editor underneath.
+        e.preventDefault();
+        const items = Array.from(overlayRef.current?.querySelectorAll<HTMLElement>("button:not([disabled])") ?? []);
+        const i = items.indexOf(document.activeElement as HTMLElement);
+        items[(i + (e.shiftKey ? -1 : 1) + items.length) % items.length]?.focus();
+      } else if ((e.key === " " || e.key === "Enter") && e.target instanceof HTMLButtonElement) {
+        return; // let the focused overlay button activate
+      } else if (["ArrowRight", "ArrowDown", "PageDown", " ", "Enter"].includes(e.key)) {
         e.preventDefault();
         if (doc && index < doc.pages.length - 1) setIndex(index + 1);
       } else if (["ArrowLeft", "ArrowUp", "PageUp"].includes(e.key)) {
@@ -113,8 +137,8 @@ export default function PresentMode() {
         setIndex(doc.pages.length - 1);
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [open, index, doc, autoplay, close, setIndex, setAutoplay, fullscreen]);
 
   useEffect(() => {
@@ -137,6 +161,7 @@ export default function PresentMode() {
   const toggleFullscreen = async () => {
     try {
       if (document.fullscreenElement) {
+        userExitedFullscreen.current = true; // the F key / button keeps the show running
         await document.exitFullscreen();
         setFullscreen(false);
       } else {
@@ -159,7 +184,7 @@ export default function PresentMode() {
   const last = index >= doc.pages.length - 1;
 
   return (
-    <div className="present-overlay" onDoubleClick={() => void toggleFullscreen()}>
+    <div ref={overlayRef} tabIndex={-1} className="present-overlay" onDoubleClick={() => void toggleFullscreen()}>
       <div
         key={page.id}
         className={`present-stage-wrap page-transition-${page.transition}`}

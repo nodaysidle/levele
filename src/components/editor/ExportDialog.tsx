@@ -158,6 +158,7 @@ export default function ExportDialog({ open, onClose }: { open: boolean; onClose
   };
 
   if (!doc || !page) return null;
+  const animWidth = format === "gif" ? gifWidth : videoWidth;
 
   const cleanBase = exportFilename(doc, "design");
   const pretty = cleanBase.replace(/-design$/, "");
@@ -176,10 +177,10 @@ export default function ExportDialog({ open, onClose }: { open: boolean; onClose
         <div className="flex w-full items-center justify-between gap-3">
           <span className="text-[10px] text-[var(--muted-2)]">
             {format === "pdf"
-              ? `${doc.pages.length} page${doc.pages.length > 1 ? "s" : ""} · ${doc.width}×${doc.height}`
+              ? `${doc.pages.length} page${doc.pages.length > 1 ? "s" : ""} · ${doc.width * scale}×${doc.height * scale}`
               : format === "gif" || format === "video"
-                ? `${duration.toFixed(1)}s animation · current page`
-                : `${doc.width}×${doc.height} · current page`}
+                ? `${animWidth}×${Math.round((animWidth * doc.height) / doc.width)} · ${duration.toFixed(1)}s animation`
+                : `${doc.width * scale}×${doc.height * scale} · current page`}
           </span>
           <div className="flex gap-2">
             <button type="button" className="btn btn-outline btn-sm" onClick={onClose} disabled={busy}>

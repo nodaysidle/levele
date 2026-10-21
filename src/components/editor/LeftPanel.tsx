@@ -26,6 +26,7 @@ import { useEditor, type LeftTab } from "@/lib/editor/store";
 import {
   BACKGROUND_PRESETS,
   createText,
+  fontStack,
   GRADIENTS,
   PALETTE,
   PHOTOS,
@@ -259,20 +260,38 @@ function TextTab() {
     if (!doc || !activePageId || !session) return;
     const fontSize = Math.max(14, Math.round(Math.min(doc.width, doc.height) * preset.size));
     const width = doc.width * 0.76;
-    const lines = Math.ceil(preset.sample.length / 26);
+    const lineHeight = preset.lineHeight ?? 1.2;
     const pageElements = doc.elements.filter((e) => e.pageId === activePageId);
     const order = Math.max(-1, ...pageElements.map((e) => e.order)) + 1;
-    const textElements = pageElements.filter((e) => e.type === "text");
-    const below = textElements.length
-      ? Math.max(...textElements.map((e) => e.y + e.height)) + 28
-      : doc.height * 0.32;
-    const y = Math.min(doc.height * 0.78, below);
-    const x = doc.width * 0.12 + (pageElements.length % 3) * 16;
+    // Count wrapped lines with the real font; 0.94 leaves slack for letter-spacing and unloaded fonts.
+    const ctx = document.createElement("canvas").getContext("2d");
+    if (ctx) ctx.font = `${preset.italic ? "italic " : ""}${preset.weight} ${fontSize}px ${fontStack(preset.font)}`;
+    const fits = (t: string) => !ctx || ctx.measureText(t).width <= width * 0.94;
+    let lines = 1;
+    let row = "";
+    for (const word of preset.sample.split(" ")) {
+      const next = row ? `${row} ${word}` : word;
+      if (row && !fits(next)) {
+        lines++;
+        row = word;
+      } else row = next;
+    }
+    const height = Math.ceil(fontSize * lineHeight * lines);
+    const bg = doc.pages.find((p) => p.id === activePageId)?.background;
+    const hex =
+      bg?.type === "solid" ? bg.color : bg?.type === "gradient" ? bg.from : bg?.type === "pattern" ? bg.bg : "";
+    const rgb = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex)?.[1];
+    const full = rgb?.length === 3 ? rgb.replace(/./g, "$&$&") : rgb;
+    const lum = full
+      ? (0.299 * parseInt(full.slice(0, 2), 16) + 0.587 * parseInt(full.slice(2, 4), 16) + 0.114 * parseInt(full.slice(4, 6), 16)) / 255
+      : 1;
+    const nudge = (pageElements.length % 3) * 16;
     const el = createText(activePageId, order, {
-      x,
-      y,
+      x: (doc.width - width) / 2 + nudge,
+      y: (doc.height - height) / 2 + nudge,
       width,
-      height: Math.ceil(fontSize * (preset.lineHeight ?? 1.2) * Math.max(1, lines)),
+      height,
+      align: "center",
       text: preset.sample,
       fontFamily: preset.font,
       fontSize,
@@ -280,7 +299,7 @@ function TextTab() {
       italic: preset.italic,
       lineHeight: preset.lineHeight,
       letterSpacing: preset.letterSpacing ? Math.round(fontSize * preset.letterSpacing * 10) : 0,
-      color: "#17161A",
+      color: lum < 0.5 ? "#FFFFFF" : "#17161A",
       name: preset.label,
     });
     session.addElement(el);

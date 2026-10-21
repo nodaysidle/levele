@@ -125,7 +125,7 @@ A second hidden stage renders at document resolution for exports. Exports wait f
 
 ### Live collaboration
 
-`src/lib/editor/mqtt-provider.ts` publishes Yjs updates to `levele/v1/<room>/doc` and keeps a retained full-state message for bootstrap. A joining peer requests a sync, receives the latest state and can start editing immediately. Awareness messages carry user, page, selection and cursor; stale presence expires after 25 seconds. BroadcastChannel mirrors updates between tabs in the same browser.
+Live sessions are opt-in: nothing is sent until **Start live session** is clicked in the Share dialog. **End live session** leaves the room, deletes the retained copy and forgets the key, so old links stop syncing with the design; starting again issues a new link. The live link is `/editor/<id>#room=<key>`; the key lives only in the URL fragment, which browsers never send to a server. `src/lib/editor/mqtt-provider.ts` derives the topic (`levele/v2/<hash>`) and an AES-GCM key from it, so the relay only ever sees ciphertext. Updates are published as they happen and the latest full state is retained (encrypted) for bootstrap. A joining peer with no local copy waits for that state, then edits immediately. Each design saves its Yjs history alongside the JSON, so every session of a design merges instead of conflicting. Awareness messages carry user, page, selection and cursor; they are not retained, and stale presence expires after 25 seconds. BroadcastChannel mirrors updates between tabs in the same browser.
 
 There is no application server. The default relay is the public EMQX test broker, and a private WSS broker can be supplied with `NEXT_PUBLIC_MQTT_URL`.
 
@@ -184,7 +184,7 @@ npm run dev
 BASE_URL=http://localhost:3000 npm run test:smoke
 ```
 
-The smoke test creates a design, adds text, opens Present mode, downloads a PNG, opens the share dialog, returns to the dashboard and asserts the design was saved. The deployed build was tested at <https://levele-eight.vercel.app> with the same suite.
+The smoke test creates a design, adds text, opens Present mode, downloads a PNG, starts a live session, joins it from a second browser context and checks edits sync both ways and survive a reload, returns to the dashboard and asserts the design was saved. The deployed build was tested at <https://levele-eight.vercel.app> with the same suite.
 
 Manual verification covered drag/resize/rotate/group, snapping guides, page management, PNG/JPG/PDF/GIF/WebM outputs, project import/export, local accounts, comments and cross-context live editing (title, layers, presence, cursors and comments).
 
@@ -226,9 +226,9 @@ Levele is a working, deployed editor rather than a finished commercial product. 
 | Area | Status |
 | :--- | :--- |
 | **Accounts** | Local-first only: IndexedDB + PBKDF2, no server auth or cross-device library sync. |
-| **Live sync** | Public MQTT relay by default; room links are the secret, payloads are not end-to-end encrypted and the broker may retain the latest state. Use `NEXT_PUBLIC_MQTT_URL` for private work. |
+| **Live sync** | Public MQTT relay by default. Payloads are end-to-end encrypted with the key in the live link, and the broker retains the latest encrypted state. Anyone with the link can edit. Use `NEXT_PUBLIC_MQTT_URL` to run your own relay. |
 | **Permissions** | Link-based editing only; no view-only role or password-protected room. |
-| **Share URLs** | Snapshots are capped around 12 KB compressed. Designs with uploads usually need the live link or project file. |
+| **Share URLs** | Snapshots are capped around 12 KB compressed. Designs with uploads usually need the live link or project file. Live state above ~900 KB isn't retained, so joiners need the creator online. |
 | **Images** | PNG/JPG/GIF/video export the current page; PDF exports all pages. |
 | **PDF** | Pages are rasterised, not vector text. |
 | **Video** | WebM on most browsers, MP4 only where MediaRecorder supports it; no audio. |
@@ -245,8 +245,8 @@ Levele is a working, deployed editor rather than a finished commercial product. 
 - **Designs are local by default.** Documents, uploads, thumbnails and local accounts live in IndexedDB in the current browser.
 - **Passwords** are hashed with PBKDF2-SHA256 (150,000 iterations, random salt) using Web Crypto. They never leave the device.
 - **Fonts** are loaded from Google Fonts. The photo library is bundled locally.
-- **Live links** sync through the configured MQTT broker. Treat the room link as the password; do not use the public default relay for confidential material.
-- **Snapshot links and project files** contain the design. They are portable by design; share them deliberately.
+- **Live links** sync through the configured MQTT broker, AES-GCM encrypted with a key that exists only in the link's `#` fragment. Treat the live link as the password.
+- **Snapshot links and project files** contain the design. Snapshots travel in the `#` fragment, so they never reach server logs. Share them deliberately.
 
 ---
 

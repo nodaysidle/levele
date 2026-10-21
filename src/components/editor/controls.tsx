@@ -272,6 +272,7 @@ export function SelectField<T extends string>({
       <div className="relative">
         <select
           className="select appearance-none pr-8"
+          aria-label={label}
           value={value}
           onChange={(e) => onChange(e.target.value as T)}
         >

@@ -20,7 +20,6 @@ import {
   deleteElements as yDeleteElements,
   deletePage as yDeletePage,
   movePage as yMovePage,
-  normalizeElementOrder,
   readSnapshot,
   setMeta,
   transactLocal,
@@ -64,11 +63,17 @@ export class EditorSession {
   private awarenessSub: (() => void) | null = null;
   private ready = false;
 
-  constructor(initial: DesignDoc, options: SessionOptions) {
+  /**
+   * `yState` reloads the saved Yjs history so every session shares one lineage; rebuilding from
+   * JSON would create concurrent edits that randomly lose to older relay state. With neither
+   * `initial` nor `yState`, the doc stays empty until a live peer or the relay fills it.
+   */
+  constructor(initial: DesignDoc | null, options: SessionOptions, yState?: Uint8Array) {
     this.options = options;
     this.ydoc = new Y.Doc();
-    applyDocument(this.ydoc, initial);
-    this.snapshot = readSnapshot(this.ydoc, initial);
+    if (yState) Y.applyUpdate(this.ydoc, yState);
+    else if (initial) applyDocument(this.ydoc, initial);
+    this.snapshot = readSnapshot(this.ydoc, initial ?? undefined);
 
     const { meta, pages, elements, comments } = collections(this.ydoc);
     this.undoManager = new Y.UndoManager([meta, pages, elements, comments], {
@@ -97,11 +102,25 @@ export class EditorSession {
     return () => this.listeners.delete(fn);
   }
 
-  historyState() {
-    return {
-      canUndo: this.undoManager.undoStack.length > 0,
-      canRedo: this.undoManager.redoStack.length > 0,
-    };
+  get roomKey() {
+    return this.options.roomId;
+  }
+
+  /** Resolves true once the doc has pages (from the relay or a peer), false on timeout. */
+  whenLoaded(timeoutMs: number): Promise<boolean> {
+    if (this.snapshot.pages.length) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        off();
+        resolve(false);
+      }, timeoutMs);
+      const off = this.subscribe((doc) => {
+        if (!doc.pages.length) return;
+        clearTimeout(timer);
+        off();
+        resolve(true);
+      });
+    });
   }
 
   setThumbnailProvider(provider: () => string | undefined) {
@@ -109,7 +128,8 @@ export class EditorSession {
   }
 
   private scheduleSave() {
-    if (!this.ready || this.destroyed) return;
+    // An empty doc is still waiting for live state; saving it would store a blank design.
+    if (!this.ready || this.destroyed || !this.snapshot.pages.length) return;
     this.options.onSaveState?.("saving");
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => void this.saveNow(), 850);
@@ -123,6 +143,7 @@ export class EditorSession {
         { ...this.snapshot, updatedAt: Date.now() },
         this.options.ownerId,
         thumb,
+        { yState: Y.encodeStateAsUpdate(this.ydoc), roomKey: this.options.roomId },
       );
       this.options.onSaveState?.("saved");
     } catch (err) {
@@ -133,6 +154,7 @@ export class EditorSession {
 
   async connect(roomId?: string, profile?: Profile) {
     if (!roomId || this.provider) return;
+    if (!globalThis.crypto?.subtle) throw new Error("Live sync needs a secure (https) page.");
     this.options.roomId = roomId;
     const { MqttProvider } = await import("./mqtt-provider");
     if (this.destroyed) return;
@@ -145,7 +167,19 @@ export class EditorSession {
     this.awarenessSub = () => provider.awareness.off("change", onAwareness);
     provider.connect();
     this.emitPeers();
-    this.options.onSaveState?.("saved");
+    this.scheduleSave(); // persist the room key so this design rejoins its live session on reopen
+  }
+
+  /** Leaves the live room, forgets its key and stops syncing; people with the link keep their copy. */
+  endLive() {
+    if (!this.provider) return;
+    this.awarenessSub?.();
+    this.awarenessSub = null;
+    this.provider.destroy(true);
+    this.provider = null;
+    this.options.roomId = undefined;
+    this.options.onPeers?.([]);
+    this.scheduleSave();
   }
 
   setOwnerId(ownerId: string) {
@@ -272,10 +306,6 @@ export class EditorSession {
     this.clipboard = this.snapshot.elements
       .filter((el) => ids.includes(el.id))
       .map((el) => ({ ...el }));
-  }
-
-  hasClipboard() {
-    return this.clipboard.length > 0;
   }
 
   pasteClipboard(pageId: string, offset = 40): string[] {
@@ -515,10 +545,12 @@ export class EditorSession {
   destroy() {
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
+      this.saveTimer = null;
       const finalDoc = { ...this.snapshot, updatedAt: Date.now() };
       const ownerId = this.options.ownerId;
       const thumb = this.options.thumbnailProvider?.();
-      void saveDocRecord(finalDoc, ownerId, thumb).catch(() => undefined);
+      const sync = { yState: Y.encodeStateAsUpdate(this.ydoc), roomKey: this.options.roomId };
+      void saveDocRecord(finalDoc, ownerId, thumb, sync).catch(() => undefined);
     }
     this.destroyed = true;
     this.awarenessSub?.();

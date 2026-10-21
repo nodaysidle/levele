@@ -10,12 +10,14 @@ import {
   Loader2,
   Radio,
   Share2,
+  Square,
   Users,
 } from "lucide-react";
 import { Modal } from "@/components/ui/Modal";
 import { useEditor } from "@/lib/editor/store";
 import { buildShareLinks } from "@/lib/share";
 import { downloadProject } from "@/lib/export/exporter";
+import { randomBytes } from "@/lib/editor/random";
 
 const copyText = async (text: string) => {
   try {
@@ -45,6 +47,7 @@ function LinkRow({
   onCopy,
   copied,
   icon,
+  empty,
 }: {
   label: string;
   description: string;
@@ -52,6 +55,7 @@ function LinkRow({
   onCopy: () => void;
   copied: boolean;
   icon: React.ReactNode;
+  empty: React.ReactNode;
 }) {
   return (
     <div className="rounded-xl border border-[var(--line)] p-3.5">
@@ -84,10 +88,7 @@ function LinkRow({
               </a>
             </div>
           ) : (
-            <p className="text-[10.5px] text-[#8a6a4e] bg-[#fff7ed] border border-[#f5dfc4] rounded-md px-2 py-1.5 mt-2 leading-relaxed">
-              This design is too large to embed in a URL (uploaded photos). Use the live link while this
-              tab is open, or send the downloadable project file.
-            </p>
+            empty
           )}
         </div>
       </div>
@@ -111,26 +112,29 @@ export default function ShareDialog({ open, onClose }: { open: boolean; onClose:
     setOrigin(window.location.origin);
   }, []);
 
+  const roomKey = session?.roomKey;
   useEffect(() => {
-    if (!open || !session || !doc) return;
-    let alive = true;
+    setLiveReady(!!roomKey);
+  }, [roomKey, open]);
+
+  // Opt-in only: nothing leaves this browser until the user starts a live session.
+  const startLive = () => {
+    if (!session) return;
     setLiveStarting(true);
     void session
-      .connect(doc.id, profile ?? undefined)
-      .then(() => {
-        if (alive) setLiveReady(true);
-      })
-      .catch(() => {
-        if (alive) toast("Live collaboration couldn't start. You can still share a snapshot.", "error");
-      })
-      .finally(() => {
-        if (alive) setLiveStarting(false);
-      });
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, session, doc?.id]);
+      .connect(session.roomKey ?? randomBytes(32), profile ?? undefined)
+      .then(() => setLiveReady(true))
+      .catch(() => toast("Live collaboration couldn't start. You can still share a snapshot.", "error"))
+      .finally(() => setLiveStarting(false));
+  };
+
+  const endLive = () => {
+    session?.endLive();
+    setLiveReady(false);
+    // Drop #room from the address bar so a reload doesn't rejoin.
+    window.history.replaceState({}, "", window.location.pathname);
+    toast("Live session ended. Old links no longer sync with this design.", "success");
+  };
 
   useEffect(() => {
     if (!open || !session) return;
@@ -140,7 +144,10 @@ export default function ShareDialog({ open, onClose }: { open: boolean; onClose:
     return () => clearInterval(id);
   }, [open, session]);
 
-  const links = useMemo(() => (doc && origin ? buildShareLinks(doc, origin) : null), [doc, origin]);
+  const links = useMemo(
+    () => (doc && origin ? buildShareLinks(doc, origin, liveReady ? session?.roomKey : undefined) : null),
+    [doc, origin, liveReady, session],
+  );
 
   const markCopied = (key: string) => {
     setCopied(key);
@@ -169,7 +176,7 @@ export default function ShareDialog({ open, onClose }: { open: boolean; onClose:
       footer={
         <div className="flex w-full items-center justify-between gap-3">
           <span className="text-[10px] text-[var(--muted-2)]">
-            {liveConnected ? "Live sync ready · MQTT relay" : liveStarting ? "Starting live session…" : "Local-first sharing"}
+            {liveConnected ? "Live session on · end-to-end encrypted" : liveStarting ? "Starting live session…" : "Saved only in this browser"}
           </span>
           <div className="flex gap-2">
             <button type="button" className="btn btn-outline btn-sm" onClick={() => doc && downloadProject(doc)}>
@@ -189,14 +196,16 @@ export default function ShareDialog({ open, onClose }: { open: boolean; onClose:
         <div className="flex-1 min-w-0">
           <div className="text-[12.5px] font-semibold flex items-center gap-2">
             <span className={`w-1.5 h-1.5 rounded-full ${liveConnected ? "bg-[#0E7C66]" : "bg-[#FFC56E]"}`} />
-            {liveConnected ? "Live collaboration is on" : liveStarting ? "Starting live session…" : liveReady ? "Relay connecting…" : "Live collaboration is off"}
+            {liveConnected ? "Live collaboration is on" : liveStarting ? "Starting live session…" : liveReady ? "Connecting…" : "Live collaboration is off"}
           </div>
           <p className="text-[10.5px] text-[var(--muted)] m-0 mt-0.5">
             {peers.length
               ? `${peers.length} collaborator${peers.length > 1 ? "s" : ""} connected`
               : liveConnected
                 ? "Open the live link on another device or tab to edit together."
-                : "Waiting for the MQTT relay — snapshot and project sharing still work offline."}
+                : liveReady
+                  ? "Connecting to the live relay. Snapshot links and the project file work offline."
+                  : "Start a live session to edit together in real time."}
           </p>
         </div>
         {peers.length ? (
@@ -213,37 +222,44 @@ export default function ShareDialog({ open, onClose }: { open: boolean; onClose:
             ))}
           </div>
         ) : null}
+        {!liveReady ? (
+          <button type="button" className="btn btn-dark btn-sm" onClick={startLive} disabled={liveStarting}>
+            {liveStarting ? <Loader2 size={13} className="spin" /> : <Radio size={13} />} Start live session
+          </button>
+        ) : (
+          <button type="button" className="btn btn-outline btn-sm" onClick={endLive}>
+            <Square size={12} /> End live session
+          </button>
+        )}
       </div>
 
-      {!liveConnected && !liveStarting ? (
-        <div className="mb-3 rounded-lg border border-[#f5dfc4] bg-[#fff7ed] px-3 py-2.5 text-[10.5px] leading-relaxed text-[#8a6a4e]">
-          Live relay is not reachable yet. Snapshot links and the project file still work; for
-          multi-device sessions check your network and the optional <code>NEXT_PUBLIC_MQTT_URL</code>.
-        </div>
-      ) : null}
-      {links?.tooLarge ? (
-        <div className="mb-3 rounded-lg border border-[#f5dfc4] bg-[#fff7ed] px-3 py-2.5 text-[10.5px] leading-relaxed text-[#8a6a4e]">
-          This design is too large to embed in a URL (usually because of uploaded images). The live
-          link will work while the creator&apos;s tab is open, but it can&apos;t open standalone. Send the
-          project file for a fully offline handoff.
-        </div>
-      ) : null}
       <div className="space-y-3">
         <LinkRow
           icon={liveReady ? <Radio size={15} /> : <Loader2 size={15} className={liveStarting ? "spin" : ""} />}
           label="Live collaboration link"
-          description="Anyone with the link can join the same design and edits sync in real time. The design is embedded when small enough, so it still opens when you're away."
+          description="Anyone with this link can edit with you in real time. The link holds the encryption key, so share it like a password."
           link={links?.live ?? null}
-          onCopy={() => links && void doCopy("live", links.live)}
+          onCopy={() => links?.live && void doCopy("live", links.live)}
           copied={copied === "live"}
+          empty={
+            <p className="text-[10.5px] text-[var(--muted)] mt-2 leading-relaxed">
+              Start a live session above to get this link.
+            </p>
+          }
         />
         <LinkRow
           icon={<Link2 size={15} />}
           label="Snapshot copy link"
-          description="Opens a fresh, independent copy of the design. Great for feedback rounds or sending a read-only starting point."
+          description="Opens a separate, editable copy. Changes to the copy never touch your design."
           link={links?.copy ?? null}
           onCopy={() => links?.copy && void doCopy("copy", links.copy)}
           copied={copied === "copy"}
+          empty={
+            <p className="text-[10.5px] text-[#8a6a4e] bg-[#fff7ed] border border-[#f5dfc4] rounded-md px-2 py-1.5 mt-2 leading-relaxed">
+              This design is too large for a link, usually because of uploaded photos. Send the project
+              file instead.
+            </p>
+          }
         />
       </div>
 
@@ -261,9 +277,9 @@ export default function ShareDialog({ open, onClose }: { open: boolean; onClose:
       <div className="mt-4 flex items-start gap-2.5 text-[10px] leading-relaxed text-[var(--muted-2)]">
         <Share2 size={13} className="mt-0.5 shrink-0" />
         <p className="m-0">
-          Live edits travel through a public MQTT relay as Yjs updates, and the broker may retain the
-          latest full state. Anyone with the room link can join, so treat the link as the password.
-          Point <code>NEXT_PUBLIC_MQTT_URL</code> at your own broker for private deployments.
+          Live edits pass through a public relay, encrypted with a key that exists only in the live
+          link. The relay keeps the latest encrypted copy so people can join while you&apos;re away.
+          Snapshot links carry the design itself, so share them deliberately.
         </p>
       </div>
     </Modal>

@@ -83,7 +83,7 @@ class TplPage {
       y,
       text,
       ...opts,
-      name: opts.name ?? text.split("\n")[0].slice(0, 32),
+      name: opts.name ?? text.replace(/\n+/g, " ").trim().slice(0, 32),
     });
     this.elements.push(el);
     return el;

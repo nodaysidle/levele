@@ -231,6 +231,10 @@ export interface StoredDoc {
   createdAt: number;
   thumbnail?: string;
   doc: DesignDoc;
+  /** Yjs history, so every session of this design merges instead of conflicting. */
+  yState?: Uint8Array;
+  /** Secret live-session key; never leaves this browser except inside the live link's #fragment. */
+  roomKey?: string;
 }
 
 export interface AssetRecord {

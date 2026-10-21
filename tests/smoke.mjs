@@ -61,6 +61,57 @@ try {
   await page.getByRole("button", { name: /Share/i }).first().click();
   await page.waitForTimeout(500);
   assert(await page.locator(".share-link code").count(), "share links were not generated");
+
+  // Live sync: a fresh browser joins through the encrypted relay, and edits flow both ways.
+  await page.getByRole("button", { name: /Start live session/i }).click();
+  const liveCode = page.locator(".share-link code", { hasText: "#room=" });
+  await liveCode.waitFor({ timeout: 20000 });
+  const liveLink = await liveCode.innerText();
+  assert(!liveLink.includes("?"), "live link leaks data into the query string");
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  const title = page.getByLabel("Design title");
+  await title.fill("Synced from A");
+  await title.press("Enter");
+
+  const peerContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const peer = await peerContext.newPage();
+  peer.on("pageerror", (error) => errors.push(`PEER PAGEERROR: ${error.message}`));
+  await peer.goto(liveLink);
+  const peerTitle = peer.getByLabel("Design title");
+  await peerTitle.waitFor({ timeout: 30000 });
+  await peer.waitForFunction(
+    () => document.querySelector('[aria-label="Design title"]')?.value === "Synced from A",
+    null,
+    { timeout: 20000 },
+  );
+  await peerTitle.fill("Edited by B");
+  await peerTitle.press("Enter");
+  await page.waitForFunction(
+    () => document.querySelector('[aria-label="Design title"]')?.value === "Edited by B",
+    null,
+    { timeout: 20000 },
+  );
+
+  // Reopening must keep the latest edit, not roll back to older relay state.
+  await page.waitForTimeout(1500);
+  await page.reload();
+  await page.getByLabel("Design title").waitFor({ timeout: 20000 });
+  await page.waitForTimeout(4000);
+  assert(
+    (await page.getByLabel("Design title").inputValue()) === "Edited by B",
+    "design rolled back after reopening a live session",
+  );
+  await peerContext.close();
+
+  // Ending the session forgets the key: after a reload the design stays offline.
+  await page.getByRole("button", { name: /Share/i }).first().click();
+  await page.getByRole("button", { name: /End live session/i }).click();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await page.waitForTimeout(1500);
+  await page.reload();
+  await page.getByLabel("Design title").waitFor({ timeout: 20000 });
+  await page.getByRole("button", { name: /Share/i }).first().click();
+  await page.getByRole("button", { name: /Start live session/i }).waitFor({ timeout: 5000 });
   await page.getByRole("button", { name: "Done", exact: true }).click();
 
   await page.locator(".editor-topbar .brand").click();

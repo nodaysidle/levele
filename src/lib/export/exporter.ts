@@ -321,5 +321,6 @@ export async function parseProjectFile(file: File): Promise<DesignDoc> {
   if (!parsed || !Array.isArray(parsed.pages) || !Array.isArray(parsed.elements)) {
     throw new Error("That file doesn't look like a Levele design.");
   }
+  parsed.comments ??= [];
   return parsed;
 }

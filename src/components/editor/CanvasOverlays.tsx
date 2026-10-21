@@ -143,7 +143,11 @@ export function CommentPins() {
       {draft ? (
         <div
           className="comment-draft"
-          style={{ left: pan.x + draft.x * zoom, top: pan.y + draft.y * zoom }}
+          style={{
+            // keep the 270px popover inside the canvas, away from the right panel
+            left: `clamp(14px, ${pan.x + draft.x * zoom}px, calc(100% - 284px))`,
+            top: `max(${pan.y + draft.y * zoom}px, 150px)`,
+          }}
           onClick={(e) => e.stopPropagation()}
         >
           <textarea
@@ -161,7 +165,9 @@ export function CommentPins() {
             }}
           />
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[11px] text-[var(--muted)]">⌘ + Enter to post</span>
+            <span className="text-[11px] text-[var(--muted)]">
+              {/Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl"} + Enter to post
+            </span>
             <div className="flex gap-1.5">
               <button
                 type="button"

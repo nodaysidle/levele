@@ -11,6 +11,11 @@ const STATE_MAX_BYTES = 900_000;
 // mqtt.js accepts Uint8Array in browsers; its published types require Buffer.
 const mqttPayload = (data: Uint8Array): Buffer => data as unknown as Buffer;
 
+const sha256 = async (text: string) =>
+  new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
+
+const toHex = (bytes: Uint8Array) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+
 type LocalState = {
   user?: { id: string; name: string; color: string };
   presence?: { pageId: string; selection: string[]; cursor?: { x: number; y: number } };
@@ -97,7 +102,9 @@ export class MqttProvider {
   private client: MqttClient | null = null;
   private channel: BroadcastChannel | null = null;
   private clientId = `levele_${randomBytes(12)}`;
-  private topicBase: string;
+  private topicBase = "";
+  // The relay is public, so payloads are AES-GCM sealed with a key derived from the room secret.
+  private key: CryptoKey | null = null;
   private docHandler: (update: Uint8Array, origin: unknown) => void;
   private stateTimer: ReturnType<typeof setTimeout> | null = null;
   private publishStateTimer: ReturnType<typeof setInterval> | null = null;
@@ -109,7 +116,6 @@ export class MqttProvider {
   constructor(roomName: string, ydoc: Y.Doc) {
     this.roomName = roomName;
     this.ydoc = ydoc;
-    this.topicBase = `levele/v1/${roomName.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
     this.awareness = new Awareness(this, Number(`0x${randomBytes(6)}`));
 
     this.docHandler = (update, origin) => {
@@ -137,6 +143,14 @@ export class MqttProvider {
   private async connectMqtt() {
     try {
       const mqtt = (await import("mqtt")).default;
+      this.topicBase = `levele/v2/${toHex(await sha256(`levele-topic:${this.roomName}`)).slice(0, 32)}`;
+      this.key = await crypto.subtle.importKey(
+        "raw",
+        await sha256(`levele-key:${this.roomName}`),
+        "AES-GCM",
+        false,
+        ["encrypt", "decrypt"],
+      );
       if (this.destroyed) return;
       const client = mqtt.connect(process.env.NEXT_PUBLIC_MQTT_URL || DEFAULT_BROKER, {
         clientId: this.clientId,
@@ -171,7 +185,7 @@ export class MqttProvider {
         this.syncedListeners.forEach((fn) => fn());
       });
 
-      client.on("message", (topic, payload) => this.handleMqtt(topic, payload));
+      client.on("message", (topic, payload) => void this.handleMqtt(topic, payload));
       client.on("error", (err) => {
         console.warn("Levele live sync:", err.message);
       });
@@ -208,6 +222,35 @@ export class MqttProvider {
     }
   }
 
+  private async seal(data: Uint8Array) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const sealed = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, this.key!, new Uint8Array(data)));
+    const out = new Uint8Array(iv.length + sealed.length);
+    out.set(iv);
+    out.set(sealed, iv.length);
+    return out;
+  }
+
+  private async open(payload: Uint8Array): Promise<Uint8Array | null> {
+    if (!this.key || payload.length < 13) return null;
+    try {
+      return new Uint8Array(
+        await crypto.subtle.decrypt(
+          { name: "AES-GCM", iv: payload.slice(0, 12) },
+          this.key,
+          payload.slice(12),
+        ),
+      );
+    } catch {
+      return null; // wrong key or tampered: ignore
+    }
+  }
+
+  private async publishSealed(topic: string, data: Uint8Array, options: { qos?: 0 | 1 | 2; retain?: boolean }) {
+    if (!this.key) return;
+    this.safePublish(topic, mqttPayload(await this.seal(data)), options);
+  }
+
   private safePublish(
     topic: string,
     payload: string | Buffer,
@@ -230,7 +273,7 @@ export class MqttProvider {
         /* channel closed */
       }
     }
-    this.safePublish(`${this.topicBase}/doc`, mqttPayload(update), { qos: 0 });
+    void this.publishSealed(`${this.topicBase}/doc`, update, { qos: 0 });
   }
 
   private scheduleStatePublish() {
@@ -239,12 +282,13 @@ export class MqttProvider {
   }
 
   private publishFullState(retain: boolean) {
+    // A joiner still waiting for the design must not overwrite the retained copy with nothing.
+    if (!this.ydoc.getMap("pages").size) return;
     const update = Y.encodeStateAsUpdate(this.ydoc);
     if (update.byteLength > STATE_MAX_BYTES) {
       // Large uploads can't be stored as retained state; peers still receive
       // incremental updates while connected.
-      this.safePublish(`${this.topicBase}/state`, mqttPayload(update), { qos: 0, retain: false });
-      return;
+      return this.publishSealed(`${this.topicBase}/state`, update, { qos: 0, retain: false });
     }
     if (this.channel) {
       try {
@@ -253,7 +297,7 @@ export class MqttProvider {
         /* closed */
       }
     }
-    this.safePublish(`${this.topicBase}/state`, mqttPayload(update), { qos: 0, retain });
+    return this.publishSealed(`${this.topicBase}/state`, update, { qos: 0, retain });
   }
 
   publishAwareness(state: AwarenessValue) {
@@ -264,10 +308,11 @@ export class MqttProvider {
         /* closed */
       }
     }
-    this.safePublish(
+    // Not retained: the 6s heartbeat rebuilds presence, and retained copies would pile up per tab.
+    return this.publishSealed(
       `${this.topicBase}/awareness/${this.clientId}`,
-      JSON.stringify(state),
-      { qos: 0, retain: true },
+      new TextEncoder().encode(JSON.stringify(state)),
+      { qos: 0 },
     );
   }
 
@@ -285,9 +330,10 @@ export class MqttProvider {
     }
   }
 
-  private handleMqtt(topic: string, payload: Uint8Array) {
+  private async handleMqtt(topic: string, payload: Uint8Array) {
     if (topic.endsWith("/doc") || topic.endsWith("/state")) {
-      this.applyRemote(new Uint8Array(payload));
+      const update = await this.open(new Uint8Array(payload));
+      if (update) this.applyRemote(update);
     } else if (topic.endsWith("/sync")) {
       if (new TextDecoder().decode(payload) === "request") {
         this.publishFullState(true);
@@ -301,15 +347,18 @@ export class MqttProvider {
         }
       }
     } else if (topic.includes("/awareness/")) {
+      const data = await this.open(new Uint8Array(payload));
+      if (!data) return;
       try {
-        this.awareness.receive(JSON.parse(new TextDecoder().decode(payload)) as AwarenessValue);
+        this.awareness.receive(JSON.parse(new TextDecoder().decode(data)) as AwarenessValue);
       } catch {
         /* malformed */
       }
     }
   }
 
-  destroy() {
+  /** `forget` also deletes the retained encrypted copy, used when the live session is ended. */
+  destroy(forget = false) {
     if (this.destroyed) return;
     this.destroyed = true;
     this.ydoc.off("update", this.docHandler);
@@ -317,19 +366,24 @@ export class MqttProvider {
     if (this.publishStateTimer) clearInterval(this.publishStateTimer);
     if (this.pruneTimer) clearInterval(this.pruneTimer);
     if (this.stateTimer) clearTimeout(this.stateTimer);
-    this.publishFullState(true);
-    this.publishAwareness({ ...this.awareness.exportLocal(), gone: true, ts: Date.now() });
+    const client = this.client;
+    // Sealing is async, so close the socket only after the farewell messages are queued.
+    void Promise.all([
+      forget
+        ? this.safePublish(`${this.topicBase}/state`, "", { qos: 0, retain: true }) // empty retained = delete
+        : this.publishFullState(true),
+      this.publishAwareness({ ...this.awareness.exportLocal(), gone: true, ts: Date.now() }),
+    ]).finally(() => {
+      try {
+        client?.end(false);
+      } catch {
+        /* already closing */
+      }
+      this.client = null;
+    });
     this.awareness.destroy();
     this.syncedListeners.clear();
     this.channel?.close();
     this.channel = null;
-    try {
-      this.client?.end(false);
-    } catch {
-      /* already closing */
-    }
-    this.client = null;
   }
 }
-
-export const REMOTE_SYNC_ORIGIN = REMOTE_ORIGIN;

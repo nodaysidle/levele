@@ -226,11 +226,6 @@ export const useEditor = create<EditorState & EditorActions>((set, get) => ({
       activePageId: doc.pages[0]?.id ?? null,
       saveState: "saved",
     });
-    session.setThumbnailProvider(() => {
-      const state = get();
-      if (!state.doc) return undefined;
-      return undefined; // replaced by the editor stage's thumbnail provider
-    });
     unsubscribe = session.subscribe((next) => {
       const state = get();
       const pageIds = new Set(next.pages.map((p) => p.id));

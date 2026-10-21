@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -8,6 +8,7 @@ import { ArrowLeft, Home, Loader2, Play, Square } from "lucide-react";
 import { useEditor } from "@/lib/editor/store";
 import { EditorSession } from "@/lib/editor/session";
 import { decodeSnapshot } from "@/lib/share";
+import { applyDocument } from "@/lib/editor/ydoc";
 import { getCurrentProfile } from "@/lib/storage/auth";
 import { getDocRecord } from "@/lib/storage/db";
 import { createDoc, uid } from "@/lib/editor/defaults";
@@ -101,14 +102,6 @@ function NotFound() {
 export default function EditorShell({ docId }: { docId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const bootQuery = useMemo(
-    () => ({
-      room: searchParams.get("room") ?? undefined,
-      snapshot: searchParams.get("snapshot") ?? undefined,
-      copy: searchParams.get("copy") === "1",
-    }),
-    [searchParams],
-  );
   const [booting, setBooting] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const sessionRef = useRef<EditorSession | null>(null);
@@ -139,6 +132,11 @@ export default function EditorShell({ docId }: { docId: string }) {
         if (!alive) return;
         setProfile(profileNow);
 
+        // Links carry their payload in the #fragment; older links used the query string.
+        const hash = new URLSearchParams(window.location.hash.slice(1));
+        const param = (key: string) => hash.get(key) ?? searchParams.get(key) ?? undefined;
+        const bootQuery = { room: param("room"), snapshot: param("snapshot"), copy: param("copy") === "1" };
+
         let local: StoredDoc | undefined;
         try {
           local = await getDocRecord(docId);
@@ -148,6 +146,8 @@ export default function EditorShell({ docId }: { docId: string }) {
         if (!alive) return;
 
         let initial: DesignDoc | null = null;
+        let yState = local?.yState;
+        let roomKey = bootQuery.room ?? local?.roomKey;
         if (bootQuery.copy && bootQuery.snapshot) {
           const snap = decodeSnapshot(bootQuery.snapshot);
           if (snap) {
@@ -157,13 +157,16 @@ export default function EditorShell({ docId }: { docId: string }) {
               title: snap.title,
               createdAt: Date.now(),
             };
+            // An independent copy shares no history or live session with the original.
+            yState = undefined;
+            roomKey = undefined;
           }
         }
         if (!initial && local?.doc) initial = local.doc;
-        if (!initial && bootQuery.snapshot) {
+        if (!initial && !roomKey && bootQuery.snapshot) {
           initial = decodeSnapshot(bootQuery.snapshot);
         }
-        if (!initial) {
+        if (!initial && !roomKey) {
           setNotFound(true);
           setBooting(false);
           return;
@@ -178,25 +181,44 @@ export default function EditorShell({ docId }: { docId: string }) {
             const s = sessionRef.current;
             if (s) useEditor.getState().setHistory(s.canUndo, s.canRedo);
           },
-        });
+        }, yState);
         if (!alive) {
           session.destroy();
           return;
         }
         created = session;
         sessionRef.current = session;
+
+        if (roomKey) {
+          void session.connect(roomKey, profileNow).catch(() => {
+            useEditor.getState().toast("Live sync couldn't connect — editing offline.", "error");
+          });
+        }
+        // Joining a live link in a fresh browser: wait for the relay or a peer to send the design.
+        if (!initial && !(await session.whenLoaded(20_000))) {
+          const legacySeed = bootQuery.snapshot ? decodeSnapshot(bootQuery.snapshot) : null;
+          if (legacySeed) {
+            // Older live links embedded the design; with nobody online, seed the empty room once.
+            applyDocument(session.ydoc, legacySeed);
+            session.undoManager.clear();
+          } else {
+            session.destroy();
+            created = null;
+            if (alive) {
+              setNotFound(true);
+              setBooting(false);
+            }
+            return;
+          }
+        }
+        if (!alive) return;
         useEditor.getState().attach(session, profileNow);
         if (process.env.NODE_ENV === "development") {
           (window as unknown as { __levele?: unknown }).__levele = { session, store: useEditor };
         }
 
-        if (bootQuery.room) {
-          void session.connect(bootQuery.room, profileNow).catch(() => {
-            useEditor.getState().toast("Live sync couldn't connect — editing offline.", "error");
-          });
-        }
         if (bootQuery.copy) {
-          window.history.replaceState({}, "", `/editor/${initial.id}`);
+          window.history.replaceState({}, "", `/editor/${session.snapshot.id}`);
         }
         if (alive) setBooting(false);
       } catch (err) {
